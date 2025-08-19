@@ -1,0 +1,5 @@
+.direnv/
+frames/
+python/.ipynb_checkpoints/
+python/__pycache__/
+images/
