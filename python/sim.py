@@ -1,6 +1,9 @@
 # Gray–Scott reaction–diffusion (2D) with MPI halo exchange (mpi4py)
 # Weak-scaling friendly, single file, supports local/global seeding.
 
+# To run with good configuration:
+# mpirun -n 4 python sim.py  --steps 2000 --print-every 50 --seed-mode local --periodic --viz-every 50 --viz-gif
+
 from mpi4py import MPI
 import numpy as np
 import argparse
