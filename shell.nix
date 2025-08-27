@@ -6,9 +6,11 @@ let
     };
   };
 
-  mpiWithCuda = pkgs.mpi.override {cudaSupport = true;};
-
   ucxWithCuda = pkgs.ucx.override {enableCuda = true;};
+
+  mpiWithCuda = pkgs.mpi.override {cudaSupport = true;
+    ucx = ucxWithCuda;
+  };
 
   cuda = pkgs.cudaPackages_12_8;
 in
@@ -36,6 +38,8 @@ in
 
         pp.ray
 
+        pp.numba
+
         pp.numpy
         pp.cupy
 
@@ -59,6 +63,9 @@ in
       export CUDA_PATH=${cuda.cudatoolkit}
       export CUDA_HOME=$CUDA_PATH
       export LD_LIBRARY_PATH=${cuda.cudatoolkit}/lib:${cuda.cuda_nvrtc}/lib:${cuda.cudnn}/lib:${cuda.nccl}/lib:$LD_LIBRARY_PATH
-      export NIX_CFLAGS_COMPILE = "-I${cuda.cudatoolkit}/include";
+      export OMP_NUM_THREADS=1
+      export MKL_NUM_THREADS=1
+      export OPENBLAS_NUM_THREADS=1
+      export NUMBA_NUM_THREADS=1
     '';
   }
