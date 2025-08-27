@@ -373,9 +373,15 @@ def main():
 
     t0 = time.time()
     for step in range(1, args.steps + 1):
+
+        halo_start = time.perf_counter()
         update_ghosts(cart, U, args.periodic)
         update_ghosts(cart, V, args.periodic)   
+        halo_end = time.perf_counter()
+
+        gss_start = time.perf_counter()
         step_gray_scott(U, V, Un, Vn, args.Du, args.Dv, args.F, args.k, args.dt)
+        gss_end = time.perf_counter()
 
         U, Un = Un, U
         V, Vn = Vn, V
@@ -390,9 +396,14 @@ def main():
             global_sum = comm.allreduce(local_sum, op=MPI.SUM)
             if rank == 0:
                 elapsed = time.time() - t0
+                gss_elapsed = (gss_end - gss_start)*1e3
+                halo_elapsed = (halo_end - halo_start)*1e3
                 print(f"[step {step:6d}] ranks={size} grid={py}x{px} "
                       f"N={NY}x{NX} local={ny}x{nx} Vsum={global_sum:.6e} "
-                      f"elapsed={elapsed:.2f}s")
+                      f"elapsed={elapsed:.2f}s "
+                      f"GSS_time={gss_elapsed:.2f}ms "
+                      f"halo_time={halo_elapsed:.2f}ms"
+                      )
 
     comm.Barrier()
     if rank == 0:
