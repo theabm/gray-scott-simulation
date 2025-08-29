@@ -1,6 +1,10 @@
 # Gray–Scott reaction–diffusion (2D) with MPI halo exchange (mpi4py)
 # Weak-scaling friendly, single file, supports local/global seeding.
 
+# TODO: mpi cuda aware transfers
+# TODO: add numba cuda support for comparison using @cuda.jit
+# TODO: add raw kernel (ElementwiseKernel - easiest - or RawKernel - harder) -- Note that this should be the same as above.
+
 # To run with good configuration:
 # mpirun -n 4 python sim.py  --steps 2000 --print-every 50 --seed-mode local --periodic --viz-every 50 --viz-gif
 
@@ -190,58 +194,114 @@ def apply_neumann_boundary_ghosts(cart, A):
         A[0, -1]    = A[1, -2]
         A[-1, -1]   = A[-2, -2]
 
+# --------------------------------------------------------------------
+# Pinned memory allocation helper
+# --------------------------------------------------------------------
+def _pinned_empty_like(nbytes, dtype, nelements):
+    """Create a NumPy array backed by pinned host memory with same shape/dtype."""
+
+    # use cupy cuda allocator to allocate pinned memory in host (not device)
+    # this will make host<->device transfers faster
+    mem = cp.cuda.alloc_pinned_memory(nbytes)     
+
+    # create a NumPy view into the pinned memory - numpy not responsible for freeing.
+    host = np.frombuffer(mem, dtype=dtype, count=nelements)
+    # return reshaped view and the mem handle (to keep alive)
+    return host.reshape((nelements,)), mem
 
 # --------------------------------------------------------------------
 # Halo exchange
 # --------------------------------------------------------------------
-def exchange_halo(cart, A):
+def exchange_halo(cart, A: cp.ndarray, B: cp.ndarray, staging: dict):
+    assert A.shape == B.shape
+    assert A.dtype == B.dtype
+
     ny, nx = A.shape
     first_row, last_row = 1, ny - 2
     first_col, last_col = 1, nx - 2
     status = MPI.Status()
 
+    # neighbors in each direction
     up, down = cart.Shift(0, 1)
     left, right = cart.Shift(1, 1)
 
-    sendbuf = np.empty((nx-2), dtype = A.dtype)
-    cp.asnumpy(A[last_row, first_col:last_col+1], out = sendbuf)
-    recvbuf = np.empty_like(sendbuf)
+    if "rows" not in staging:
+        # number of elements to send/recv in each direction
+        nr_halo = (nx-2)*2
+        nr_halo_bytes = nr_halo * A.dtype.itemsize
+
+        staging["rows"] = {}
+        staging["rows"]["send"], staging["rows"]["send_mem"] = _pinned_empty_like(nr_halo_bytes, A.dtype, nr_halo)
+        staging["rows"]["recv"], staging["rows"]["recv_mem"] = _pinned_empty_like(nr_halo_bytes, A.dtype, nr_halo)
+
+    if "cols" not in staging:
+        nc_halo = (ny-2)*2
+        nc_halo_bytes = nc_halo * A.dtype.itemsize
+
+        staging["cols"] = {}
+        staging["cols"]["send"], staging["cols"]["send_mem"] = _pinned_empty_like(nc_halo_bytes, A.dtype, nc_halo)
+        staging["cols"]["recv"], staging["cols"]["recv_mem"] = _pinned_empty_like(nc_halo_bytes, A.dtype, nc_halo)
 
     # rows
+    R = staging["rows"]
+    sendbuf = R["send"]
+    recvbuf = R["recv"]
+
+    # send down
+    cp.asnumpy(A[last_row, first_col:last_col+1], out = sendbuf[:nx-2])
+    cp.asnumpy(B[last_row, first_col:last_col+1], out = sendbuf[nx-2:])
+
     cart.Sendrecv(sendbuf, dest=down, sendtag=101,
                   recvbuf=recvbuf, source=up, recvtag=101, status=status)
-    A[0, first_col:last_col+1].set(recvbuf)
-    
-    cp.asnumpy(A[first_row, first_col:last_col+1], out = sendbuf)
+                  
+    A[0, first_col:last_col+1].set(recvbuf[:nx-2])
+    B[0, first_col:last_col+1].set(recvbuf[nx-2:])
+
+    # send up
+    cp.asnumpy(A[first_row, first_col:last_col+1], out = sendbuf[:nx-2])
+    cp.asnumpy(B[first_row, first_col:last_col+1], out = sendbuf[nx-2:])
+
     cart.Sendrecv(sendbuf, dest=up, sendtag=102,
                   recvbuf=recvbuf, source=down, recvtag=102, status=status)
-    A[ny-1, first_col:last_col+1].set(recvbuf)
+
+    A[ny-1, first_col:last_col+1].set(recvbuf[:nx-2])
+    B[ny-1, first_col:last_col+1].set(recvbuf[nx-2:])
 
     # cols
-    col_len = ny - 2
-    send_right = cp.ascontiguousarray(A[first_row:last_row+1, last_col])
-    sendbuf = np.empty(send_right.shape, dtype = send_right.dtype)
-    cp.asnumpy(send_right, out = sendbuf)
-    recvbuf = np.empty_like(sendbuf)
+    C = staging["cols"]
+    sendbuf = C["send"]
+    recvbuf = C["recv"]
+
+    # send right
+    send_right_A = cp.ascontiguousarray(A[first_row:last_row+1, last_col])
+    send_right_B = cp.ascontiguousarray(B[first_row:last_row+1, last_col])
+    cp.asnumpy(send_right_A, out = sendbuf[:ny-2])
+    cp.asnumpy(send_right_B, out = sendbuf[ny-2:])
+
     cart.Sendrecv(sendbuf = sendbuf, dest=right, sendtag=201, recvbuf=recvbuf,  source=left, recvtag=201, status=status)
-    A[first_row:last_row+1, 0] = cp.asarray(recvbuf)
+    A[first_row:last_row+1, 0] = cp.asarray(recvbuf[:ny-2])
+    B[first_row:last_row+1, 0] = cp.asarray(recvbuf[ny-2:])
 
-
-    send_left  = cp.ascontiguousarray(A[first_row:last_row+1, first_col])
-    cp.asnumpy(send_left, out = sendbuf)
+    # send left
+    send_left_A = cp.ascontiguousarray(A[first_row:last_row+1, first_col])
+    send_left_B = cp.ascontiguousarray(B[first_row:last_row+1, first_col])
+    cp.asnumpy(send_left_A, out = sendbuf[:ny-2])
+    cp.asnumpy(send_left_B, out = sendbuf[ny-2:])
     cart.Sendrecv(sendbuf=sendbuf, dest=left, sendtag=202, recvbuf=recvbuf, source=right, recvtag=202, status=status)
-    A[first_row:last_row+1, nx-1] = cp.asarray(recvbuf)
+    A[first_row:last_row+1, nx-1] = cp.asarray(recvbuf[:ny-2])
+    B[first_row:last_row+1, nx-1] = cp.asarray(recvbuf[ny-2:])
 
 # --------------------------------------------------------------------
 # update ghost cells
 # --------------------------------------------------------------------
-def update_ghosts(cart, A, periodic):
+def update_ghosts(cart, A, B, periodic, staging):
     # Always exchange with interior neighbors
-    exchange_halo(cart, A)
+    exchange_halo(cart, A, B, staging)
 
     # Only BCs on physical edges (no-ops for interior ranks, or if periodic)
     if not periodic:
         apply_neumann_boundary_ghosts(cart, A)
+        apply_neumann_boundary_ghosts(cart, B)
 
 
 # --------------------------------------------------------------------
@@ -362,6 +422,7 @@ def assemble_gif(outdir="frames", outfile="out.gif", fps=10):
     imageio.mimsave(outfile, frames, fps=fps)
     print(f"[viz] Wrote {outfile}")
 
+
 # --------------------------------------------------------------------
 # Main
 # --------------------------------------------------------------------
@@ -380,8 +441,9 @@ def main():
     rng = cp.random.default_rng(args.seed + rank)
     initialize(U, V, coords, rng, args, px, py)
 
-    update_ghosts(cart, U, args.periodic)
-    update_ghosts(cart, V, args.periodic)
+    staging = {}
+    
+    update_ghosts(cart, U, V, args.periodic, staging)
     # after initialize(...)
     if args.viz_every and args.viz_every > 0:
         save_frame(0, cart, U, V, nx, ny, px, py,
@@ -392,8 +454,7 @@ def main():
     for step in range(1, args.steps + 1):
 
         halo_start = time.perf_counter()
-        update_ghosts(cart, U, args.periodic)
-        update_ghosts(cart, V, args.periodic)   
+        update_ghosts(cart, U, V, args.periodic, staging)
         halo_end = time.perf_counter()
 
         gss_start = time.perf_counter()
