@@ -5,18 +5,11 @@ let
       allowUnfree = true;
     };
   };
-
-  ucxWithCuda = pkgs.ucx.override {enableCuda = true;};
-
-  mpiWithCuda = pkgs.mpi.override {cudaSupport = true;
-    ucx = ucxWithCuda;
-  };
-
   cuda = pkgs.cudaPackages_12_8;
 in
   pkgs.mkShell {
     packages = with pkgs; [
-      mpiWithCuda
+      mpi
       libyaml
       gcc
 
@@ -29,35 +22,39 @@ in
       cuda.cudnn
       cuda.nccl
 
-      ucxWithCuda
+      ucx
 
       # for jupyter notebook (basics, for more advanced use jupyenv)
-      (python312.withPackages (pp: [
-        pp.dask
-        pp.distributed
+      (python312.withPackages (pp:
+        with pp; [
+          dask
+          distributed
 
-        pp.ray
+          ray
 
-        pp.numba
+          numba
 
-        pp.numpy
-        pp.cupy
+          numpy
+          cupy
 
-        pp.jax
-        pp.torch-bin
+          jax
+          jaxlib
+          (pp.callPackage ./mpi4jax.nix {inherit pkgs;})
 
-        (pp.mpi4py.override {mpi = mpiWithCuda;})
+          torch-bin
 
-        # for jupyter notebook (basics, for more advanced use jupyenv)
-        pp.ipython
-        pp.jupyter
+          mpi4py
 
-        pp.pillow
-        pp.tqdm
-        pp.ipywidgets
-        pp.imageio
-        pp.matplotlib
-      ]))
+          # for jupyter notebook (basics, for more advanced use jupyenv)
+          ipython
+          jupyter
+
+          pillow
+          tqdm
+          ipywidgets
+          imageio
+          matplotlib
+        ]))
     ];
     shellHook = ''
       export CUDA_PATH=${cuda.cudatoolkit}
