@@ -55,8 +55,6 @@ def parse_args():
                 help="which field to visualize")
     ap.add_argument("--viz-outdir", type=str, default="frames",
                 help="directory to save frames")
-    ap.add_argument("--viz-clim", nargs=2, type=float, default=None,
-                help="color limits vmin vmax (default: autoscale)")
     ap.add_argument("--viz-gif", action="store_true",
                 help="assemble saved frames into out.gif (rank0 only)")
 
@@ -354,11 +352,10 @@ def gather_global_field(cart, A_interior, nx, ny, px, py):
     return G
 
 
-def save_frame(step, cart, U, V, nx, ny, px, py, which="V", outdir="frames", clim=None):
+def save_frame(step, cart, U, V, nx, ny, px, py, which="V", outdir="frames"):
     """
     Gather global field(s) and save a PNG on rank 0.
     which: "U" | "V" | "both"
-    clim: (vmin, vmax) or None for autoscale
     """
     rank = cart.Get_rank()
     os.makedirs(outdir, exist_ok=True)
@@ -389,15 +386,10 @@ def save_frame(step, cart, U, V, nx, ny, px, py, which="V", outdir="frames", cli
         axes[1].set_title("V")
         for ax in axes:
             ax.set_xticks([]); ax.set_yticks([])
-        if clim:
-            ims[0].set_clim(*clim)
-            ims[1].set_clim(*clim)
     else:
         fig, ax = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
         data = Ug if which == "U" else Vg
         im = ax.imshow(data, origin="lower", interpolation="nearest")
-        if clim:
-            im.set_clim(*clim)
         ax.set_title(which)
         ax.set_xticks([]); ax.set_yticks([])
 
@@ -447,7 +439,7 @@ def main():
     # after initialize(...)
     if args.viz_every and args.viz_every > 0:
         save_frame(0, cart, U, V, nx, ny, px, py,
-               which=args.viz_field, outdir=args.viz_outdir, clim=args.viz_clim)
+               which=args.viz_field, outdir=args.viz_outdir)
 
 
     t0 = time.time()
@@ -466,7 +458,7 @@ def main():
         
         if args.viz_every and (step % args.viz_every == 0):
             save_frame(step, cart, U, V, nx, ny, px, py,
-                   which=args.viz_field, outdir=args.viz_outdir, clim=args.viz_clim)
+                   which=args.viz_field, outdir=args.viz_outdir)
 
         if args.print_every and (step % args.print_every == 0):
             comm.Barrier()
