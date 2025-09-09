@@ -24,6 +24,8 @@ in
 
       ucx
 
+      imagemagick
+
       # for jupyter notebook (basics, for more advanced use jupyenv)
       (python312.withPackages (pp:
         with pp; [
