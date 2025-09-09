@@ -56,10 +56,20 @@ in
           matplotlib
         ]))
     ];
+
+    env.LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
+      pkgs.stdenv.cc.cc
+      pkgs.zlib
+      cuda.cudatoolkit
+      cuda.cuda_nvrtc
+      cuda.cudnn
+      cuda.nccl
+      pkgs.mpi
+    ];
     shellHook = ''
+      # export LD_LIBRARY_PATH=${cuda.cudatoolkit}/lib:${cuda.cuda_nvrtc}/lib:${cuda.cudnn}/lib:${cuda.nccl}/lib:$LD_LIBRARY_PATH
       export CUDA_PATH=${cuda.cudatoolkit}
       export CUDA_HOME=$CUDA_PATH
-      export LD_LIBRARY_PATH=${cuda.cudatoolkit}/lib:${cuda.cuda_nvrtc}/lib:${cuda.cudnn}/lib:${cuda.nccl}/lib:$LD_LIBRARY_PATH
       export OMP_NUM_THREADS=1
       export MKL_NUM_THREADS=1
       export OPENBLAS_NUM_THREADS=1

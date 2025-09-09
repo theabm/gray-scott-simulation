@@ -1,0 +1,9 @@
+# PIN specific versions otherwise doreisa will crash because it uses a different API
+ray==2.47.1
+dask==2024.6.0
+mpi4py
+numpy
+matplotlib
+imageio
+pandas
+pyarrow
