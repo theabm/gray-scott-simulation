@@ -14,7 +14,7 @@ python3 -m analytics.avg &
 ANALYTICS_PID=$!
 
 # simulation
-mpirun -n 2 python3 python/sim-doreisa.py  --steps 10 --print-every 1 --seed-mode local --periodic --viz-every 1 --viz-gif 2> ./out.err 2>> ./out.err
+mpirun -n 2 python3 python/sim-doreisa.py  --steps 10 --print-every 1 --seed-mode local --periodic --viz-every 1 --viz-gif
 
 wait $ANALYTICS_PID
 ray stop
