@@ -3,3 +3,9 @@ frames/
 python/.ipynb_checkpoints/
 python/__pycache__/
 images/
+.doreisa-env/
+analytics/__pycache__/
+c/sim
+doreisa/
+python/frames/
+c/frames/
